@@ -151,11 +151,6 @@ alloc_error:
     return NULL;
 }
 
-// the static analyzer can't prove the allocs to be correct
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunknown-warning-option"
-#pragma GCC diagnostic ignored "-Wanalyzer-malloc-leak"
-
 static data_t *vdata_make(data_t *first, const char *key, const char *pretty_key, va_list ap)
 {
     data_type_t type;
@@ -181,13 +176,10 @@ static data_t *vdata_make(data_t *first, const char *key, const char *pretty_key
                 fprintf(stderr, "vdata_make() format type used twice\n");
                 goto alloc_error;
             }
-            format = va_arg(ap, char *);
-            if (format) {
-                format = strdup(format);
-                if (!format) {
-                    WARN_STRDUP("vdata_make()");
-                    goto alloc_error;
-                }
+            format = strdup(va_arg(ap, char *));
+            if (!format) {
+                WARN_STRDUP("vdata_make()");
+                goto alloc_error;
             }
             type = va_arg(ap, data_type_t);
             continue;
@@ -206,7 +198,7 @@ static data_t *vdata_make(data_t *first, const char *key, const char *pretty_key
             break;
         case DATA_STRING:
             value_release = (value_release_fn)free; // appease CSA checker
-            value.v_ptr = strdup(va_arg(ap, char const *));
+            value.v_ptr = strdup(va_arg(ap, char *));
             if (!value.v_ptr)
                 WARN_STRDUP("vdata_make()");
             break;
@@ -265,6 +257,7 @@ static data_t *vdata_make(data_t *first, const char *key, const char *pretty_key
             type = va_arg(ap, data_type_t);
         }
     } while (key);
+    va_end(ap);
     if (format) {
         fprintf(stderr, "vdata_make() format type without data\n");
         goto alloc_error;
@@ -287,7 +280,7 @@ R_API data_t *data_make(const char *key, const char *pretty_key, ...)
     return result;
 }
 
-static data_t *data_append(data_t *first, const char *key, const char *pretty_key, ...)
+R_API data_t *data_append(data_t *first, const char *key, const char *pretty_key, ...)
 {
     va_list ap;
     va_start(ap, pretty_key);
@@ -369,10 +362,6 @@ R_API data_t *data_retain(data_t *data)
     return data;
 }
 
-#if defined(__clang__)
-    // ignore "call to function _free through pointer to incorrect function type"
-    __attribute__((no_sanitize("undefined")))
-#endif
 R_API void data_free(data_t *data)
 {
     if (data && data->retain) {
@@ -390,8 +379,6 @@ R_API void data_free(data_t *data)
         free(prev_data);
     }
 }
-
-#pragma GCC diagnostic pop
 
 /* data output */
 
